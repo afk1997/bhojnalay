@@ -15,6 +15,7 @@ export default function ReportsPage() {
   const [summaries, setSummaries] = useState<DailySummary[]>([]);
   const [rates, setRates] = useState<Rates>(DEFAULT_RATES);
   const [loading, setLoading] = useState(false);
+  const [guestsOnly, setGuestsOnly] = useState(false);
 
   useEffect(() => {
     getRates().then(setRates);
@@ -39,40 +40,58 @@ export default function ReportsPage() {
   };
 
   // Calculate totals
+  const emptyMealCounts = () => ({ navkarshi: 0, lunch: 0, chovihar: 0, tea_coffee: 0, parcel: 0 });
   const totals = {
-    guest: { navkarshi: 0, lunch: 0, chovihar: 0 },
-    staff: { navkarshi: 0, lunch: 0, chovihar: 0 },
-    sevak: { navkarshi: 0, lunch: 0, chovihar: 0 },
+    guest: emptyMealCounts(),
+    staff: emptyMealCounts(),
+    sevak: emptyMealCounts(),
   };
 
   summaries.forEach((summary) => {
     totals.guest.navkarshi += summary.guest.navkarshi;
     totals.guest.lunch += summary.guest.lunch;
     totals.guest.chovihar += summary.guest.chovihar;
+    totals.guest.tea_coffee += summary.guest.tea_coffee;
+    totals.guest.parcel += summary.guest.parcel;
     totals.staff.navkarshi += summary.staff.navkarshi;
     totals.staff.lunch += summary.staff.lunch;
     totals.staff.chovihar += summary.staff.chovihar;
+    totals.staff.tea_coffee += summary.staff.tea_coffee;
+    totals.staff.parcel += summary.staff.parcel;
     totals.sevak.navkarshi += summary.sevak.navkarshi;
     totals.sevak.lunch += summary.sevak.lunch;
     totals.sevak.chovihar += summary.sevak.chovihar;
+    totals.sevak.tea_coffee += summary.sevak.tea_coffee;
+    totals.sevak.parcel += summary.sevak.parcel;
   });
 
-  const guestTotal = totals.guest.navkarshi + totals.guest.lunch + totals.guest.chovihar;
-  const staffTotal = totals.staff.navkarshi + totals.staff.lunch + totals.staff.chovihar;
-  const sevakTotal = totals.sevak.navkarshi + totals.sevak.lunch + totals.sevak.chovihar;
-  const grandTotal = guestTotal + staffTotal + sevakTotal;
+  const guestTotal = totals.guest.navkarshi + totals.guest.lunch + totals.guest.chovihar + totals.guest.tea_coffee + totals.guest.parcel;
+  const staffTotal = totals.staff.navkarshi + totals.staff.lunch + totals.staff.chovihar + totals.staff.tea_coffee + totals.staff.parcel;
+  const sevakTotal = totals.sevak.navkarshi + totals.sevak.lunch + totals.sevak.chovihar + totals.sevak.tea_coffee + totals.sevak.parcel;
+
+  // Calculate total catering (use default if no entry exists for a day)
+  const totalCatering = summaries.reduce((acc, s) => {
+    return acc + (s.catering > 0 ? s.catering : rates.catering_staff_default);
+  }, 0);
+
+  const grandTotal = guestTotal + staffTotal + sevakTotal + totalCatering;
   const totalAmount =
     totals.guest.navkarshi * rates.navkarshi +
     totals.guest.lunch * rates.lunch +
-    totals.guest.chovihar * rates.chovihar;
+    totals.guest.chovihar * rates.chovihar +
+    totals.guest.tea_coffee * rates.tea_coffee +
+    totals.guest.parcel * rates.parcel;
 
   const handleExport = () => {
-    const filename = `bhojnalay_${startDate}_to_${endDate}.xlsx`;
-    exportToExcel(summaries, rates, filename);
+    const filename = `bhojnalay_${startDate}_to_${endDate}${guestsOnly ? '_guests_only' : ''}.xlsx`;
+    exportToExcel(summaries, rates, filename, guestsOnly);
   };
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-IN', {
+    // Parse YYYY-MM-DD directly to avoid timezone issues
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    return date.toLocaleDateString('en-IN', {
       day: '2-digit',
       month: 'short',
     });
@@ -89,7 +108,7 @@ export default function ReportsPage() {
 
       {/* Date Range Selector */}
       <div className="bg-white rounded-xl p-4 shadow-sm mb-4 no-print">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className="block text-sm text-gray-500 mb-1">From</label>
             <input
@@ -109,13 +128,22 @@ export default function ReportsPage() {
             />
           </div>
         </div>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={guestsOnly}
+            onChange={(e) => setGuestsOnly(e.target.checked)}
+            className="w-5 h-5 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+          />
+          <span className="text-sm text-gray-700">Show Guests Only (Paid)</span>
+        </label>
       </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl p-4 text-white">
-          <div className="text-orange-100 text-sm">Total Plates</div>
-          <div className="text-3xl font-bold">{grandTotal}</div>
+          <div className="text-orange-100 text-sm">{guestsOnly ? 'Guest Plates' : 'Total Plates'}</div>
+          <div className="text-3xl font-bold">{guestsOnly ? guestTotal : grandTotal}</div>
         </div>
         <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-xl p-4 text-white">
           <div className="text-green-100 text-sm">Total Amount</div>
@@ -131,14 +159,22 @@ export default function ReportsPage() {
             <span className="text-orange-600">Guests</span>
             <span className="font-semibold">{guestTotal} plates</span>
           </div>
-          <div className="flex justify-between items-center">
-            <span className="text-blue-600">Staff</span>
-            <span className="font-semibold">{staffTotal} plates</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-purple-600">Free Sevaks</span>
-            <span className="font-semibold">{sevakTotal} plates</span>
-          </div>
+          {!guestsOnly && (
+            <>
+              <div className="flex justify-between items-center">
+                <span className="text-blue-600">Staff</span>
+                <span className="font-semibold">{staffTotal} plates</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-purple-600">Sevaks</span>
+                <span className="font-semibold">{sevakTotal} plates</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-600">Catering Staff</span>
+                <span className="font-semibold">{totalCatering} plates</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -165,15 +201,22 @@ export default function ReportsPage() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-3 py-3 text-left text-gray-600">Date</th>
-                  <th className="px-3 py-3 text-center text-orange-600" colSpan={3}>
+                  <th className="px-3 py-3 text-center text-orange-600" colSpan={5}>
                     Guests
                   </th>
-                  <th className="px-3 py-3 text-center text-blue-600" colSpan={3}>
-                    Staff
-                  </th>
-                  <th className="px-3 py-3 text-center text-purple-600" colSpan={3}>
-                    Sevaks
-                  </th>
+                  {!guestsOnly && (
+                    <>
+                      <th className="px-3 py-3 text-center text-blue-600" colSpan={5}>
+                        Staff
+                      </th>
+                      <th className="px-3 py-3 text-center text-purple-600" colSpan={5}>
+                        Sevaks
+                      </th>
+                      <th className="px-3 py-3 text-center text-gray-600">
+                        Cat
+                      </th>
+                    </>
+                  )}
                   <th className="px-3 py-3 text-right text-gray-600">Total</th>
                   <th className="px-3 py-3 text-right text-green-600">Amt</th>
                 </tr>
@@ -182,12 +225,23 @@ export default function ReportsPage() {
                   <th className="px-1">N</th>
                   <th className="px-1">L</th>
                   <th className="px-1">C</th>
-                  <th className="px-1">N</th>
-                  <th className="px-1">L</th>
-                  <th className="px-1">C</th>
-                  <th className="px-1">N</th>
-                  <th className="px-1">L</th>
-                  <th className="px-1">C</th>
+                  <th className="px-1">T</th>
+                  <th className="px-1">P</th>
+                  {!guestsOnly && (
+                    <>
+                      <th className="px-1">N</th>
+                      <th className="px-1">L</th>
+                      <th className="px-1">C</th>
+                      <th className="px-1">T</th>
+                      <th className="px-1">P</th>
+                      <th className="px-1">N</th>
+                      <th className="px-1">L</th>
+                      <th className="px-1">C</th>
+                      <th className="px-1">T</th>
+                      <th className="px-1">P</th>
+                      <th className="px-1"></th>
+                    </>
+                  )}
                   <th></th>
                   <th></th>
                 </tr>
@@ -195,16 +249,19 @@ export default function ReportsPage() {
               <tbody className="divide-y divide-gray-100">
                 {summaries.map((summary) => {
                   const gTotal =
-                    summary.guest.navkarshi + summary.guest.lunch + summary.guest.chovihar;
+                    summary.guest.navkarshi + summary.guest.lunch + summary.guest.chovihar + summary.guest.tea_coffee + summary.guest.parcel;
                   const sTotal =
-                    summary.staff.navkarshi + summary.staff.lunch + summary.staff.chovihar;
+                    summary.staff.navkarshi + summary.staff.lunch + summary.staff.chovihar + summary.staff.tea_coffee + summary.staff.parcel;
                   const svTotal =
-                    summary.sevak.navkarshi + summary.sevak.lunch + summary.sevak.chovihar;
-                  const rowTotal = gTotal + sTotal + svTotal;
+                    summary.sevak.navkarshi + summary.sevak.lunch + summary.sevak.chovihar + summary.sevak.tea_coffee + summary.sevak.parcel;
+                  const cateringForDay = summary.catering > 0 ? summary.catering : rates.catering_staff_default;
+                  const rowTotal = gTotal + sTotal + svTotal + cateringForDay;
                   const rowAmount =
                     summary.guest.navkarshi * rates.navkarshi +
                     summary.guest.lunch * rates.lunch +
-                    summary.guest.chovihar * rates.chovihar;
+                    summary.guest.chovihar * rates.chovihar +
+                    summary.guest.tea_coffee * rates.tea_coffee +
+                    summary.guest.parcel * rates.parcel;
 
                   return (
                     <tr key={summary.date} className="hover:bg-gray-50">
@@ -220,26 +277,51 @@ export default function ReportsPage() {
                       <td className="px-1 py-2 text-center text-orange-600">
                         {summary.guest.chovihar}
                       </td>
-                      <td className="px-1 py-2 text-center text-blue-600">
-                        {summary.staff.navkarshi}
+                      <td className="px-1 py-2 text-center text-orange-600">
+                        {summary.guest.tea_coffee}
                       </td>
-                      <td className="px-1 py-2 text-center text-blue-600">
-                        {summary.staff.lunch}
+                      <td className="px-1 py-2 text-center text-orange-600">
+                        {summary.guest.parcel}
                       </td>
-                      <td className="px-1 py-2 text-center text-blue-600">
-                        {summary.staff.chovihar}
-                      </td>
-                      <td className="px-1 py-2 text-center text-purple-600">
-                        {summary.sevak.navkarshi}
-                      </td>
-                      <td className="px-1 py-2 text-center text-purple-600">
-                        {summary.sevak.lunch}
-                      </td>
-                      <td className="px-1 py-2 text-center text-purple-600">
-                        {summary.sevak.chovihar}
-                      </td>
+                      {!guestsOnly && (
+                        <>
+                          <td className="px-1 py-2 text-center text-blue-600">
+                            {summary.staff.navkarshi}
+                          </td>
+                          <td className="px-1 py-2 text-center text-blue-600">
+                            {summary.staff.lunch}
+                          </td>
+                          <td className="px-1 py-2 text-center text-blue-600">
+                            {summary.staff.chovihar}
+                          </td>
+                          <td className="px-1 py-2 text-center text-blue-600">
+                            {summary.staff.tea_coffee}
+                          </td>
+                          <td className="px-1 py-2 text-center text-blue-600">
+                            {summary.staff.parcel}
+                          </td>
+                          <td className="px-1 py-2 text-center text-purple-600">
+                            {summary.sevak.navkarshi}
+                          </td>
+                          <td className="px-1 py-2 text-center text-purple-600">
+                            {summary.sevak.lunch}
+                          </td>
+                          <td className="px-1 py-2 text-center text-purple-600">
+                            {summary.sevak.chovihar}
+                          </td>
+                          <td className="px-1 py-2 text-center text-purple-600">
+                            {summary.sevak.tea_coffee}
+                          </td>
+                          <td className="px-1 py-2 text-center text-purple-600">
+                            {summary.sevak.parcel}
+                          </td>
+                          <td className="px-1 py-2 text-center text-gray-600">
+                            {cateringForDay}
+                          </td>
+                        </>
+                      )}
                       <td className="px-3 py-2 text-right font-semibold">
-                        {rowTotal}
+                        {guestsOnly ? gTotal : rowTotal}
                       </td>
                       <td className="px-3 py-2 text-right font-semibold text-green-600">
                         ₹{rowAmount}
@@ -254,13 +336,24 @@ export default function ReportsPage() {
                   <td className="px-1 py-2 text-center">{totals.guest.navkarshi}</td>
                   <td className="px-1 py-2 text-center">{totals.guest.lunch}</td>
                   <td className="px-1 py-2 text-center">{totals.guest.chovihar}</td>
-                  <td className="px-1 py-2 text-center">{totals.staff.navkarshi}</td>
-                  <td className="px-1 py-2 text-center">{totals.staff.lunch}</td>
-                  <td className="px-1 py-2 text-center">{totals.staff.chovihar}</td>
-                  <td className="px-1 py-2 text-center">{totals.sevak.navkarshi}</td>
-                  <td className="px-1 py-2 text-center">{totals.sevak.lunch}</td>
-                  <td className="px-1 py-2 text-center">{totals.sevak.chovihar}</td>
-                  <td className="px-3 py-2 text-right">{grandTotal}</td>
+                  <td className="px-1 py-2 text-center">{totals.guest.tea_coffee}</td>
+                  <td className="px-1 py-2 text-center">{totals.guest.parcel}</td>
+                  {!guestsOnly && (
+                    <>
+                      <td className="px-1 py-2 text-center">{totals.staff.navkarshi}</td>
+                      <td className="px-1 py-2 text-center">{totals.staff.lunch}</td>
+                      <td className="px-1 py-2 text-center">{totals.staff.chovihar}</td>
+                      <td className="px-1 py-2 text-center">{totals.staff.tea_coffee}</td>
+                      <td className="px-1 py-2 text-center">{totals.staff.parcel}</td>
+                      <td className="px-1 py-2 text-center">{totals.sevak.navkarshi}</td>
+                      <td className="px-1 py-2 text-center">{totals.sevak.lunch}</td>
+                      <td className="px-1 py-2 text-center">{totals.sevak.chovihar}</td>
+                      <td className="px-1 py-2 text-center">{totals.sevak.tea_coffee}</td>
+                      <td className="px-1 py-2 text-center">{totals.sevak.parcel}</td>
+                      <td className="px-1 py-2 text-center">{totalCatering}</td>
+                    </>
+                  )}
+                  <td className="px-3 py-2 text-right">{guestsOnly ? guestTotal : grandTotal}</td>
                   <td className="px-3 py-2 text-right text-green-600">
                     ₹{totalAmount}
                   </td>

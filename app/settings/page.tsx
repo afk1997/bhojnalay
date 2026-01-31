@@ -85,6 +85,36 @@ export default function SettingsPage() {
           onChange={(v) => setRates({ ...rates, chovihar: v })}
           color="text-blue-600"
         />
+        <RateInput
+          label="Tea/Coffee Rate"
+          value={rates.tea_coffee}
+          onChange={(v) => setRates({ ...rates, tea_coffee: v })}
+          color="text-teal-600"
+        />
+        <RateInput
+          label="Parcel Rate"
+          value={rates.parcel}
+          onChange={(v) => setRates({ ...rates, parcel: v })}
+          color="text-pink-600"
+        />
+      </div>
+
+      {/* Catering Staff */}
+      <div className="bg-white rounded-xl p-4 shadow-sm mb-6">
+        <label className="block text-lg font-semibold text-gray-700 mb-2">
+          Default Catering Staff Count
+        </label>
+        <p className="text-sm text-gray-500 mb-3">
+          Default daily count for catering staff (free, can be adjusted per day)
+        </p>
+        <input
+          type="number"
+          min="0"
+          value={rates.catering_staff_default || ''}
+          onChange={(e) => setRates({ ...rates, catering_staff_default: parseInt(e.target.value) || 0 })}
+          className="w-full px-4 py-3 text-2xl border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-center"
+          placeholder="0"
+        />
       </div>
 
       {/* Preview */}
@@ -105,8 +135,16 @@ export default function SettingsPage() {
             <span className="text-gray-600">Chovihar</span>
             <span className="font-semibold">₹{rates.chovihar}/plate</span>
           </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">Tea/Coffee</span>
+            <span className="font-semibold">₹{rates.tea_coffee}/cup</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">Parcel</span>
+            <span className="font-semibold">₹{rates.parcel}/parcel</span>
+          </div>
           <div className="pt-2 border-t border-gray-200 flex justify-between">
-            <span className="text-gray-600">Full Day (1 guest)</span>
+            <span className="text-gray-600">Full Day Meals (1 guest)</span>
             <span className="font-bold text-orange-600">
               ₹{rates.navkarshi + rates.lunch + rates.chovihar}
             </span>
@@ -140,7 +178,7 @@ export default function SettingsPage() {
       <div className="mt-6 p-4 bg-blue-50 rounded-xl">
         <p className="text-sm text-blue-700">
           <strong>Note:</strong> Rates apply only to <strong>Guests</strong> (chargeable).
-          Staff and Free Sevaks are not charged.
+          Staff and Sevaks are not charged.
         </p>
       </div>
     </div>

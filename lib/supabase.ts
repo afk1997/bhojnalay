@@ -138,18 +138,26 @@ export async function deletePlateEntry(id: string): Promise<boolean> {
 export function aggregateEntriesToSummary(entries: PlateEntry[]): Map<string, DailySummary> {
   const summaries = new Map<string, DailySummary>();
 
+  const emptyMealCounts = () => ({ navkarshi: 0, lunch: 0, chovihar: 0, tea_coffee: 0, parcel: 0 });
+
   entries.forEach((entry) => {
     if (!summaries.has(entry.date)) {
       summaries.set(entry.date, {
         date: entry.date,
-        guest: { navkarshi: 0, lunch: 0, chovihar: 0 },
-        staff: { navkarshi: 0, lunch: 0, chovihar: 0 },
-        sevak: { navkarshi: 0, lunch: 0, chovihar: 0 },
+        guest: emptyMealCounts(),
+        staff: emptyMealCounts(),
+        sevak: emptyMealCounts(),
+        catering: 0,
       });
     }
 
     const summary = summaries.get(entry.date)!;
-    summary[entry.category][entry.meal_type] += entry.count;
+    if (entry.category === 'catering') {
+      // Catering is a single count, not broken down by meal type
+      summary.catering += entry.count;
+    } else {
+      summary[entry.category][entry.meal_type] += entry.count;
+    }
   });
 
   return summaries;
@@ -186,6 +194,8 @@ export async function saveRates(rates: Rates): Promise<boolean> {
     { meal_type: 'navkarshi', rate: rates.navkarshi },
     { meal_type: 'lunch', rate: rates.lunch },
     { meal_type: 'chovihar', rate: rates.chovihar },
+    { meal_type: 'tea_coffee', rate: rates.tea_coffee },
+    { meal_type: 'parcel', rate: rates.parcel },
   ];
 
   const { error } = await supabase

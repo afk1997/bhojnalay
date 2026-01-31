@@ -1,6 +1,6 @@
 // New individual plate entry (for log-based system)
-export type Category = 'guest' | 'staff' | 'sevak';
-export type MealType = 'navkarshi' | 'lunch' | 'chovihar';
+export type Category = 'guest' | 'staff' | 'sevak' | 'catering';
+export type MealType = 'navkarshi' | 'lunch' | 'chovihar' | 'tea_coffee' | 'parcel';
 
 export interface PlateEntry {
   id: string;
@@ -29,22 +29,34 @@ export interface DailyEntry {
 }
 
 // Aggregated summary calculated from PlateEntries
+export interface MealCounts {
+  navkarshi: number;
+  lunch: number;
+  chovihar: number;
+  tea_coffee: number;
+  parcel: number;
+}
+
 export interface DailySummary {
   date: string;
-  guest: { navkarshi: number; lunch: number; chovihar: number };
-  staff: { navkarshi: number; lunch: number; chovihar: number };
-  sevak: { navkarshi: number; lunch: number; chovihar: number };
+  guest: MealCounts;
+  staff: MealCounts;
+  sevak: MealCounts;
+  catering: number;  // Single count for catering staff (no meal breakdown)
 }
 
 export interface Rates {
   navkarshi: number;
   lunch: number;
   chovihar: number;
+  tea_coffee: number;
+  parcel: number;
+  catering_staff_default: number;
 }
 
 export interface RateRecord {
   id?: string;
-  meal_type: 'navkarshi' | 'lunch' | 'chovihar';
+  meal_type: MealType;
   rate: number;
   updated_at?: string;
 }
@@ -72,4 +84,7 @@ export const DEFAULT_RATES: Rates = {
   navkarshi: 50,
   lunch: 100,
   chovihar: 50,
+  tea_coffee: 20,
+  parcel: 30,
+  catering_staff_default: 10,
 };

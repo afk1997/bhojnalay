@@ -20,17 +20,23 @@ function HomePageContent() {
   // Form state
   const [category, setCategory] = useState<Category>('guest');
   const [mealType, setMealType] = useState<MealType>('lunch');
-  const [count, setCount] = useState<number>(1);
+  const [count, setCount] = useState<string>('');
   const [saving, setSaving] = useState(false);
 
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editCategory, setEditCategory] = useState<Category>('guest');
   const [editMealType, setEditMealType] = useState<MealType>('lunch');
-  const [editCount, setEditCount] = useState<number>(1);
+  const [editCount, setEditCount] = useState<string>('');
 
   // Delete confirmation
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  // View mode: 'log' or 'summary'
+  const [viewMode, setViewMode] = useState<'log' | 'summary'>('log');
+
+  // Summary edit state
+  const [summaryEdits, setSummaryEdits] = useState<Record<string, string>>({});
 
   // Load data
   useEffect(() => {
@@ -49,29 +55,42 @@ function HomePageContent() {
   };
 
   // Calculate summary
+  const emptyMealCounts = () => ({ navkarshi: 0, lunch: 0, chovihar: 0, tea_coffee: 0, parcel: 0 });
   const summary = {
-    guest: { navkarshi: 0, lunch: 0, chovihar: 0 },
-    staff: { navkarshi: 0, lunch: 0, chovihar: 0 },
-    sevak: { navkarshi: 0, lunch: 0, chovihar: 0 },
+    guest: emptyMealCounts(),
+    staff: emptyMealCounts(),
+    sevak: emptyMealCounts(),
+    catering: 0,
   };
 
   entries.forEach((entry) => {
-    summary[entry.category][entry.meal_type] += entry.count;
+    if (entry.category === 'catering') {
+      summary.catering += entry.count;
+    } else {
+      summary[entry.category][entry.meal_type] += entry.count;
+    }
   });
 
-  const guestTotal = summary.guest.navkarshi + summary.guest.lunch + summary.guest.chovihar;
-  const staffTotal = summary.staff.navkarshi + summary.staff.lunch + summary.staff.chovihar;
-  const sevakTotal = summary.sevak.navkarshi + summary.sevak.lunch + summary.sevak.chovihar;
-  const grandTotal = guestTotal + staffTotal + sevakTotal;
+  // Use default catering if no catering entry exists for this day
+  const hasCateringEntry = entries.some(e => e.category === 'catering');
+  const cateringCount = hasCateringEntry ? summary.catering : rates.catering_staff_default;
+
+  const guestTotal = summary.guest.navkarshi + summary.guest.lunch + summary.guest.chovihar + summary.guest.tea_coffee + summary.guest.parcel;
+  const staffTotal = summary.staff.navkarshi + summary.staff.lunch + summary.staff.chovihar + summary.staff.tea_coffee + summary.staff.parcel;
+  const sevakTotal = summary.sevak.navkarshi + summary.sevak.lunch + summary.sevak.chovihar + summary.sevak.tea_coffee + summary.sevak.parcel;
+  const grandTotal = guestTotal + staffTotal + sevakTotal + cateringCount;
 
   const totalAmount =
     summary.guest.navkarshi * rates.navkarshi +
     summary.guest.lunch * rates.lunch +
-    summary.guest.chovihar * rates.chovihar;
+    summary.guest.chovihar * rates.chovihar +
+    summary.guest.tea_coffee * rates.tea_coffee +
+    summary.guest.parcel * rates.parcel;
 
   // Handlers
   const handleAdd = async () => {
-    if (count <= 0) return;
+    const countNum = parseInt(count) || 0;
+    if (countNum <= 0) return;
     setSaving(true);
 
     const now = new Date();
@@ -82,12 +101,12 @@ function HomePageContent() {
       time,
       category,
       meal_type: mealType,
-      count,
+      count: countNum,
     });
 
     if (entry) {
       setEntries([...entries, entry]);
-      setCount(1); // Reset count
+      setCount(''); // Reset count to empty
     }
     setSaving(false);
   };
@@ -96,23 +115,24 @@ function HomePageContent() {
     setEditingId(entry.id);
     setEditCategory(entry.category);
     setEditMealType(entry.meal_type);
-    setEditCount(entry.count);
+    setEditCount(entry.count.toString());
   };
 
   const handleSaveEdit = async () => {
-    if (!editingId || editCount <= 0) return;
+    const editCountNum = parseInt(editCount) || 0;
+    if (!editingId || editCountNum <= 0) return;
 
     const success = await updatePlateEntry(editingId, {
       category: editCategory,
       meal_type: editMealType,
-      count: editCount,
+      count: editCountNum,
     });
 
     if (success) {
       setEntries(
         entries.map((e) =>
           e.id === editingId
-            ? { ...e, category: editCategory, meal_type: editMealType, count: editCount }
+            ? { ...e, category: editCategory, meal_type: editMealType, count: editCountNum }
             : e
         )
       );
@@ -129,19 +149,138 @@ function HomePageContent() {
   };
 
   const getCategoryLabel = (cat: Category) => {
-    return cat === 'guest' ? 'Guest' : cat === 'staff' ? 'Staff' : 'Sevak';
+    const labels: Record<Category, string> = {
+      guest: 'Guest',
+      staff: 'Staff',
+      sevak: 'Sevak',
+      catering: 'Catering',
+    };
+    return labels[cat];
   };
 
   const getMealLabel = (meal: MealType) => {
-    return meal === 'navkarshi' ? 'Navkarshi' : meal === 'lunch' ? 'Lunch' : 'Chovihar';
+    const labels: Record<MealType, string> = {
+      navkarshi: 'Navkarshi',
+      lunch: 'Lunch',
+      chovihar: 'Chovihar',
+      tea_coffee: 'Tea/Coffee',
+      parcel: 'Parcel',
+    };
+    return labels[meal];
+  };
+
+  // Helper to format date without timezone issues
+  const formatDate = (dateStr: string) => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    const d = new Date(year, month - 1, day);
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
   };
 
   const getCategoryColor = (cat: Category) => {
-    return cat === 'guest'
-      ? 'text-orange-600 bg-orange-50'
-      : cat === 'staff'
-      ? 'text-blue-600 bg-blue-50'
-      : 'text-purple-600 bg-purple-50';
+    const colors: Record<Category, string> = {
+      guest: 'text-orange-600 bg-orange-50',
+      staff: 'text-blue-600 bg-blue-50',
+      sevak: 'text-purple-600 bg-purple-50',
+      catering: 'text-gray-600 bg-gray-100',
+    };
+    return colors[cat];
+  };
+
+  // Handle saving catering count
+  const handleSaveCatering = async (newCount: number) => {
+    if (newCount < 0) return;
+    setSaving(true);
+
+    // Find existing catering entry for this date
+    const existingCatering = entries.find(e => e.category === 'catering');
+
+    if (existingCatering) {
+      // Update existing entry
+      const success = await updatePlateEntry(existingCatering.id, { count: newCount });
+      if (success) {
+        setEntries(entries.map(e =>
+          e.id === existingCatering.id ? { ...e, count: newCount } : e
+        ));
+      }
+    } else {
+      // Create new catering entry
+      const now = new Date();
+      const time = now.toTimeString().slice(0, 5);
+      const entry = await addPlateEntry({
+        date,
+        time,
+        category: 'catering',
+        meal_type: 'lunch', // placeholder, not used for catering
+        count: newCount,
+      });
+      if (entry) {
+        setEntries([...entries, entry]);
+      }
+    }
+    setSaving(false);
+  };
+
+  // Handle summary cell edit
+  const handleSummaryEdit = async (cat: 'guest' | 'staff' | 'sevak', meal: MealType, newValue: number) => {
+    if (newValue < 0) return;
+
+    const currentValue = summary[cat][meal];
+    const diff = newValue - currentValue;
+
+    if (diff === 0) return;
+
+    setSaving(true);
+
+    if (diff > 0) {
+      // Add new entry for the difference
+      const now = new Date();
+      const time = now.toTimeString().slice(0, 5);
+      const entry = await addPlateEntry({
+        date,
+        time,
+        category: cat,
+        meal_type: meal,
+        count: diff,
+      });
+      if (entry) {
+        setEntries([...entries, entry]);
+      }
+    } else {
+      // Need to reduce - find entries to modify/delete
+      let remaining = Math.abs(diff);
+      const matchingEntries = entries.filter(e => e.category === cat && e.meal_type === meal);
+      const updatedEntries = [...entries];
+      const entriesToDelete: string[] = [];
+
+      for (const entry of matchingEntries) {
+        if (remaining <= 0) break;
+
+        if (entry.count <= remaining) {
+          // Delete this entry entirely
+          entriesToDelete.push(entry.id);
+          remaining -= entry.count;
+        } else {
+          // Reduce this entry
+          const newCount = entry.count - remaining;
+          await updatePlateEntry(entry.id, { count: newCount });
+          const idx = updatedEntries.findIndex(e => e.id === entry.id);
+          if (idx !== -1) {
+            updatedEntries[idx] = { ...updatedEntries[idx], count: newCount };
+          }
+          remaining = 0;
+        }
+      }
+
+      // Delete entries marked for deletion
+      for (const id of entriesToDelete) {
+        await deletePlateEntry(id);
+      }
+
+      setEntries(updatedEntries.filter(e => !entriesToDelete.includes(e.id)));
+    }
+
+    setSaving(false);
+    setSummaryEdits({});
   };
 
   return (
@@ -190,8 +329,8 @@ function HomePageContent() {
 
         {/* Meal Selection */}
         <div className="mb-3">
-          <label className="text-xs text-gray-500 mb-1 block">Meal</label>
-          <div className="grid grid-cols-3 gap-2">
+          <label className="text-xs text-gray-500 mb-1 block">Item</label>
+          <div className="grid grid-cols-3 gap-2 mb-2">
             {(['navkarshi', 'lunch', 'chovihar'] as MealType[]).map((meal) => (
               <button
                 key={meal}
@@ -206,6 +345,21 @@ function HomePageContent() {
               </button>
             ))}
           </div>
+          <div className="grid grid-cols-2 gap-2">
+            {(['tea_coffee', 'parcel'] as MealType[]).map((meal) => (
+              <button
+                key={meal}
+                onClick={() => setMealType(meal)}
+                className={`py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                  mealType === meal
+                    ? 'bg-teal-500 text-white'
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                {getMealLabel(meal)}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Count Input */}
@@ -213,20 +367,21 @@ function HomePageContent() {
           <label className="text-xs text-gray-500 mb-1 block">Count</label>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setCount(Math.max(1, count - 1))}
+              onClick={() => setCount(String(Math.max(0, (parseInt(count) || 0) - 1)))}
               className="w-12 h-12 rounded-lg bg-gray-100 text-2xl font-bold text-gray-600"
             >
               -
             </button>
             <input
               type="number"
-              min="1"
+              min="0"
               value={count}
-              onChange={(e) => setCount(Math.max(1, parseInt(e.target.value) || 1))}
+              onChange={(e) => setCount(e.target.value)}
+              placeholder="0"
               className="flex-1 px-4 py-3 border border-gray-300 rounded-lg text-center text-xl font-bold"
             />
             <button
-              onClick={() => setCount(count + 1)}
+              onClick={() => setCount(String((parseInt(count) || 0) + 1))}
               className="w-12 h-12 rounded-lg bg-gray-100 text-2xl font-bold text-gray-600"
             >
               +
@@ -237,18 +392,165 @@ function HomePageContent() {
         {/* Add Button */}
         <button
           onClick={handleAdd}
-          disabled={saving || count <= 0}
+          disabled={saving || (parseInt(count) || 0) <= 0}
           className="w-full py-3 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 disabled:bg-gray-400 transition-colors"
         >
           {saving ? 'Adding...' : 'Add Entry'}
         </button>
       </div>
 
+      {/* View Mode Toggle */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setViewMode('log')}
+          className={`flex-1 py-2 rounded-lg font-medium transition-colors ${
+            viewMode === 'log'
+              ? 'bg-orange-500 text-white'
+              : 'bg-gray-100 text-gray-600'
+          }`}
+        >
+          Entry Log
+        </button>
+        <button
+          onClick={() => setViewMode('summary')}
+          className={`flex-1 py-2 rounded-lg font-medium transition-colors ${
+            viewMode === 'summary'
+              ? 'bg-orange-500 text-white'
+              : 'bg-gray-100 text-gray-600'
+          }`}
+        >
+          Edit Summary
+        </button>
+      </div>
+
+      {/* Summary Edit View */}
+      {viewMode === 'summary' && (
+        <div className="bg-white rounded-xl shadow-sm mb-4 overflow-hidden">
+          <div className="px-4 py-3 bg-gray-50 border-b">
+            <h2 className="text-sm font-semibold text-gray-500">
+              EDIT SUMMARY FOR {formatDate(date)}
+            </h2>
+          </div>
+          <div className="p-4">
+            {/* Header */}
+            <div className="grid grid-cols-7 gap-1 mb-2 text-xs text-gray-500 text-center">
+              <div></div>
+              <div>N</div>
+              <div>L</div>
+              <div>C</div>
+              <div>T</div>
+              <div>P</div>
+              <div>Total</div>
+            </div>
+            {/* Guest Row */}
+            <div className="grid grid-cols-7 gap-1 mb-2 items-center">
+              <div className="text-orange-600 font-medium text-sm">Guest</div>
+              {(['navkarshi', 'lunch', 'chovihar', 'tea_coffee', 'parcel'] as MealType[]).map((meal) => (
+                <input
+                  key={`guest-${meal}`}
+                  type="number"
+                  min="0"
+                  value={summaryEdits[`guest-${meal}`] ?? summary.guest[meal]}
+                  onChange={(e) => setSummaryEdits({ ...summaryEdits, [`guest-${meal}`]: e.target.value })}
+                  onBlur={(e) => {
+                    const val = parseInt(e.target.value) || 0;
+                    if (val !== summary.guest[meal]) {
+                      handleSummaryEdit('guest', meal, val);
+                    }
+                  }}
+                  className="w-full px-1 py-1 border rounded text-center text-sm"
+                />
+              ))}
+              <div className="text-center font-semibold text-sm">{guestTotal}</div>
+            </div>
+            {/* Staff Row */}
+            <div className="grid grid-cols-7 gap-1 mb-2 items-center">
+              <div className="text-blue-600 font-medium text-sm">Staff</div>
+              {(['navkarshi', 'lunch', 'chovihar', 'tea_coffee', 'parcel'] as MealType[]).map((meal) => (
+                <input
+                  key={`staff-${meal}`}
+                  type="number"
+                  min="0"
+                  value={summaryEdits[`staff-${meal}`] ?? summary.staff[meal]}
+                  onChange={(e) => setSummaryEdits({ ...summaryEdits, [`staff-${meal}`]: e.target.value })}
+                  onBlur={(e) => {
+                    const val = parseInt(e.target.value) || 0;
+                    if (val !== summary.staff[meal]) {
+                      handleSummaryEdit('staff', meal, val);
+                    }
+                  }}
+                  className="w-full px-1 py-1 border rounded text-center text-sm"
+                />
+              ))}
+              <div className="text-center font-semibold text-sm">{staffTotal}</div>
+            </div>
+            {/* Sevak Row */}
+            <div className="grid grid-cols-7 gap-1 mb-2 items-center">
+              <div className="text-purple-600 font-medium text-sm">Sevak</div>
+              {(['navkarshi', 'lunch', 'chovihar', 'tea_coffee', 'parcel'] as MealType[]).map((meal) => (
+                <input
+                  key={`sevak-${meal}`}
+                  type="number"
+                  min="0"
+                  value={summaryEdits[`sevak-${meal}`] ?? summary.sevak[meal]}
+                  onChange={(e) => setSummaryEdits({ ...summaryEdits, [`sevak-${meal}`]: e.target.value })}
+                  onBlur={(e) => {
+                    const val = parseInt(e.target.value) || 0;
+                    if (val !== summary.sevak[meal]) {
+                      handleSummaryEdit('sevak', meal, val);
+                    }
+                  }}
+                  className="w-full px-1 py-1 border rounded text-center text-sm"
+                />
+              ))}
+              <div className="text-center font-semibold text-sm">{sevakTotal}</div>
+            </div>
+            {/* Catering Row */}
+            <div className="grid grid-cols-7 gap-1 mb-2 items-center border-t pt-2">
+              <div className="text-gray-600 font-medium text-sm">Catering</div>
+              <div className="col-span-5">
+                <input
+                  type="number"
+                  min="0"
+                  value={summaryEdits['catering'] ?? cateringCount}
+                  onChange={(e) => setSummaryEdits({ ...summaryEdits, catering: e.target.value })}
+                  onBlur={(e) => {
+                    const val = parseInt(e.target.value) || 0;
+                    if (val !== cateringCount) {
+                      handleSaveCatering(val);
+                    }
+                  }}
+                  className="w-20 px-2 py-1 border rounded text-center text-sm"
+                />
+                <span className="text-xs text-gray-400 ml-2">
+                  (Default: {rates.catering_staff_default})
+                </span>
+              </div>
+              <div className="text-center font-semibold text-sm">{cateringCount}</div>
+            </div>
+            {/* Totals */}
+            <div className="border-t pt-3 mt-3">
+              <div className="flex justify-between text-sm">
+                <span className="font-medium">Grand Total</span>
+                <span className="font-bold">{grandTotal} plates</span>
+              </div>
+              <div className="flex justify-between text-sm text-green-600 mt-1">
+                <span className="font-medium">Amount (Guests only)</span>
+                <span className="font-bold">₹{totalAmount.toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Entry Log */}
+      {viewMode === 'log' && (
       <div className="bg-white rounded-xl shadow-sm mb-4 overflow-hidden">
         <div className="px-4 py-3 bg-gray-50 border-b">
           <h2 className="text-sm font-semibold text-gray-500">
-            TODAY'S ENTRIES ({entries.length})
+            {date === today
+              ? `TODAY'S ENTRIES (${entries.length})`
+              : `ENTRIES FOR ${formatDate(date)} (${entries.length})`}
           </h2>
         </div>
 
@@ -280,7 +582,7 @@ function HomePageContent() {
                         </button>
                       ))}
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-3 gap-1 mb-1">
                       {(['navkarshi', 'lunch', 'chovihar'] as MealType[]).map((meal) => (
                         <button
                           key={meal}
@@ -295,12 +597,28 @@ function HomePageContent() {
                         </button>
                       ))}
                     </div>
+                    <div className="grid grid-cols-2 gap-1 mb-1">
+                      {(['tea_coffee', 'parcel'] as MealType[]).map((meal) => (
+                        <button
+                          key={meal}
+                          onClick={() => setEditMealType(meal)}
+                          className={`py-1 px-2 rounded text-xs font-medium ${
+                            editMealType === meal
+                              ? 'bg-teal-500 text-white'
+                              : 'bg-gray-100 text-gray-600'
+                          }`}
+                        >
+                          {getMealLabel(meal)}
+                        </button>
+                      ))}
+                    </div>
                     <div className="flex gap-2">
                       <input
                         type="number"
-                        min="1"
+                        min="0"
                         value={editCount}
-                        onChange={(e) => setEditCount(Math.max(1, parseInt(e.target.value) || 1))}
+                        onChange={(e) => setEditCount(e.target.value)}
+                        placeholder="0"
                         className="w-20 px-2 py-1 border rounded text-center"
                       />
                       <button
@@ -357,32 +675,39 @@ function HomePageContent() {
           </div>
         )}
       </div>
+      )}
 
       {/* Summary */}
       <div className="bg-white rounded-xl p-4 shadow-sm mb-4">
-        <h2 className="text-sm font-semibold text-gray-500 mb-3">TODAY'S SUMMARY</h2>
+        <h2 className="text-sm font-semibold text-gray-500 mb-3">
+          {date === today ? "TODAY'S SUMMARY" : `SUMMARY FOR ${formatDate(date)}`}
+        </h2>
 
         <div className="space-y-2 text-sm">
           <div className="flex justify-between items-center">
             <span className="text-orange-600 font-medium">Guests</span>
-            <span>
-              N:{summary.guest.navkarshi} L:{summary.guest.lunch} C:{summary.guest.chovihar}
-              <strong className="ml-2">= {guestTotal}</strong>
+            <span className="text-xs">
+              N:{summary.guest.navkarshi} L:{summary.guest.lunch} C:{summary.guest.chovihar} T:{summary.guest.tea_coffee} P:{summary.guest.parcel}
+              <strong className="ml-1">= {guestTotal}</strong>
             </span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-blue-600 font-medium">Staff</span>
-            <span>
-              N:{summary.staff.navkarshi} L:{summary.staff.lunch} C:{summary.staff.chovihar}
-              <strong className="ml-2">= {staffTotal}</strong>
+            <span className="text-xs">
+              N:{summary.staff.navkarshi} L:{summary.staff.lunch} C:{summary.staff.chovihar} T:{summary.staff.tea_coffee} P:{summary.staff.parcel}
+              <strong className="ml-1">= {staffTotal}</strong>
             </span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-purple-600 font-medium">Sevaks</span>
-            <span>
-              N:{summary.sevak.navkarshi} L:{summary.sevak.lunch} C:{summary.sevak.chovihar}
-              <strong className="ml-2">= {sevakTotal}</strong>
+            <span className="text-xs">
+              N:{summary.sevak.navkarshi} L:{summary.sevak.lunch} C:{summary.sevak.chovihar} T:{summary.sevak.tea_coffee} P:{summary.sevak.parcel}
+              <strong className="ml-1">= {sevakTotal}</strong>
             </span>
+          </div>
+          <div className="flex justify-between items-center pt-2 border-t">
+            <span className="text-gray-600 font-medium">Catering Staff</span>
+            <span className="font-semibold">{cateringCount}</span>
           </div>
         </div>
       </div>
