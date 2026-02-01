@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { PlateEntry, DailySummary, Rates, RateRecord, DEFAULT_RATES, Category, MealType } from './types';
+import { PlateEntry, DailySummary, Rates, RateRecord, DEFAULT_RATES, Category, MealType, SpecialDailyRates, DEFAULT_SPECIAL_RATES } from './types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -147,6 +147,7 @@ export function aggregateEntriesToSummary(entries: PlateEntry[]): Map<string, Da
         guest: emptyMealCounts(),
         staff: emptyMealCounts(),
         sevak: emptyMealCounts(),
+        special: emptyMealCounts(),
         catering: 0,
       });
     }
@@ -209,10 +210,32 @@ export async function saveRates(rates: Rates): Promise<boolean> {
   return true;
 }
 
+// ============ SPECIAL DAILY RATES ============
+
+export async function getSpecialRatesForDate(date: string): Promise<SpecialDailyRates | null> {
+  // For now, only use local storage for special rates (simpler)
+  return getSpecialRatesLocalForDate(date);
+}
+
+export async function saveSpecialRatesForDate(
+  date: string,
+  rates: Omit<SpecialDailyRates, 'date'>
+): Promise<boolean> {
+  return saveSpecialRatesLocalForDate(date, rates);
+}
+
+export async function getSpecialRatesForDateRange(
+  startDate: string,
+  endDate: string
+): Promise<Map<string, SpecialDailyRates>> {
+  return getSpecialRatesLocalForDateRange(startDate, endDate);
+}
+
 // ============ LOCAL STORAGE FUNCTIONS ============
 
 const PLATE_ENTRIES_KEY = 'bhojnalay_plate_entries';
 const RATES_KEY = 'bhojnalay_rates';
+const SPECIAL_RATES_KEY = 'bhojnalay_special_daily_rates';
 
 function getLocalPlateEntries(): PlateEntry[] {
   if (typeof window === 'undefined') return [];
@@ -279,4 +302,47 @@ function saveRatesLocal(rates: Rates): boolean {
   if (typeof window === 'undefined') return false;
   localStorage.setItem(RATES_KEY, JSON.stringify(rates));
   return true;
+}
+
+// Special daily rates local storage functions
+function getLocalSpecialRates(): Record<string, SpecialDailyRates> {
+  if (typeof window === 'undefined') return {};
+  const data = localStorage.getItem(SPECIAL_RATES_KEY);
+  return data ? JSON.parse(data) : {};
+}
+
+function saveLocalSpecialRates(rates: Record<string, SpecialDailyRates>): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(SPECIAL_RATES_KEY, JSON.stringify(rates));
+}
+
+function getSpecialRatesLocalForDate(date: string): SpecialDailyRates | null {
+  const allRates = getLocalSpecialRates();
+  return allRates[date] || null;
+}
+
+function saveSpecialRatesLocalForDate(
+  date: string,
+  rates: Omit<SpecialDailyRates, 'date'>
+): boolean {
+  const allRates = getLocalSpecialRates();
+  allRates[date] = { date, ...rates };
+  saveLocalSpecialRates(allRates);
+  return true;
+}
+
+function getSpecialRatesLocalForDateRange(
+  startDate: string,
+  endDate: string
+): Map<string, SpecialDailyRates> {
+  const allRates = getLocalSpecialRates();
+  const result = new Map<string, SpecialDailyRates>();
+
+  Object.entries(allRates).forEach(([date, rates]) => {
+    if (date >= startDate && date <= endDate) {
+      result.set(date, rates);
+    }
+  });
+
+  return result;
 }

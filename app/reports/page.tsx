@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { PlateEntry, DailySummary, Rates, DEFAULT_RATES } from '@/lib/types';
-import { getPlateEntriesByDateRange, aggregateEntriesToSummary, getRates } from '@/lib/supabase';
+import { PlateEntry, DailySummary, Rates, DEFAULT_RATES, SpecialDailyRates, getPlateCount } from '@/lib/types';
+import { getPlateEntriesByDateRange, aggregateEntriesToSummary, getRates, getSpecialRatesForDateRange } from '@/lib/supabase';
 import { exportToExcel } from '@/lib/excel';
 
 export default function ReportsPage() {
@@ -14,6 +14,7 @@ export default function ReportsPage() {
   const [entries, setEntries] = useState<PlateEntry[]>([]);
   const [summaries, setSummaries] = useState<DailySummary[]>([]);
   const [rates, setRates] = useState<Rates>(DEFAULT_RATES);
+  const [specialRatesMap, setSpecialRatesMap] = useState<Map<string, SpecialDailyRates>>(new Map());
   const [loading, setLoading] = useState(false);
   const [guestsOnly, setGuestsOnly] = useState(false);
 
@@ -36,6 +37,11 @@ export default function ReportsPage() {
       a.date.localeCompare(b.date)
     );
     setSummaries(sortedSummaries);
+
+    // Load special rates for date range
+    const specialRates = await getSpecialRatesForDateRange(startDate, endDate);
+    setSpecialRatesMap(specialRates);
+
     setLoading(false);
   };
 
@@ -45,6 +51,7 @@ export default function ReportsPage() {
     guest: emptyMealCounts(),
     staff: emptyMealCounts(),
     sevak: emptyMealCounts(),
+    special: emptyMealCounts(),
   };
 
   summaries.forEach((summary) => {
@@ -63,28 +70,65 @@ export default function ReportsPage() {
     totals.sevak.chovihar += summary.sevak.chovihar;
     totals.sevak.tea_coffee += summary.sevak.tea_coffee;
     totals.sevak.parcel += summary.sevak.parcel;
+    totals.special.navkarshi += summary.special.navkarshi;
+    totals.special.lunch += summary.special.lunch;
+    totals.special.chovihar += summary.special.chovihar;
+    totals.special.tea_coffee += summary.special.tea_coffee;
+    totals.special.parcel += summary.special.parcel;
   });
 
-  const guestTotal = totals.guest.navkarshi + totals.guest.lunch + totals.guest.chovihar + totals.guest.tea_coffee + totals.guest.parcel;
-  const staffTotal = totals.staff.navkarshi + totals.staff.lunch + totals.staff.chovihar + totals.staff.tea_coffee + totals.staff.parcel;
-  const sevakTotal = totals.sevak.navkarshi + totals.sevak.lunch + totals.sevak.chovihar + totals.sevak.tea_coffee + totals.sevak.parcel;
+  // Plate counts (excluding tea_coffee)
+  const guestPlates = getPlateCount(totals.guest);
+  const staffPlates = getPlateCount(totals.staff);
+  const sevakPlates = getPlateCount(totals.sevak);
+  const specialPlates = getPlateCount(totals.special);
+
+  // Tea counts
+  const guestTea = totals.guest.tea_coffee;
+  const staffTea = totals.staff.tea_coffee;
+  const sevakTea = totals.sevak.tea_coffee;
+  const specialTea = totals.special.tea_coffee;
+
+  // Total counts
+  const guestTotal = guestPlates + guestTea;
+  const staffTotal = staffPlates + staffTea;
+  const sevakTotal = sevakPlates + sevakTea;
+  const specialTotal = specialPlates + specialTea;
 
   // Calculate total catering (use default if no entry exists for a day)
   const totalCatering = summaries.reduce((acc, s) => {
     return acc + (s.catering > 0 ? s.catering : rates.catering_staff_default);
   }, 0);
 
-  const grandTotal = guestTotal + staffTotal + sevakTotal + totalCatering;
-  const totalAmount =
+  // Grand totals
+  const totalPlates = guestPlates + staffPlates + sevakPlates + specialPlates + totalCatering;
+  const totalTeaCoffee = guestTea + staffTea + sevakTea + specialTea;
+  const grandTotal = totalPlates + totalTeaCoffee;
+
+  // Guest amount (global rates)
+  const guestAmount =
     totals.guest.navkarshi * rates.navkarshi +
     totals.guest.lunch * rates.lunch +
     totals.guest.chovihar * rates.chovihar +
     totals.guest.tea_coffee * rates.tea_coffee +
     totals.guest.parcel * rates.parcel;
 
+  // Special amount (sum of daily rates)
+  const specialAmount = summaries.reduce((acc, summary) => {
+    const dailyRates = specialRatesMap.get(summary.date) || { navkarshi: 0, lunch: 0, chovihar: 0, tea_coffee: 0, parcel: 0 };
+    return acc +
+      summary.special.navkarshi * dailyRates.navkarshi +
+      summary.special.lunch * dailyRates.lunch +
+      summary.special.chovihar * dailyRates.chovihar +
+      summary.special.tea_coffee * dailyRates.tea_coffee +
+      summary.special.parcel * dailyRates.parcel;
+  }, 0);
+
+  const totalAmount = guestAmount + specialAmount;
+
   const handleExport = () => {
     const filename = `bhojnalay_${startDate}_to_${endDate}${guestsOnly ? '_guests_only' : ''}.xlsx`;
-    exportToExcel(summaries, rates, filename, guestsOnly);
+    exportToExcel(summaries, rates, specialRatesMap, filename, guestsOnly);
   };
 
   const formatDate = (dateStr: string) => {
@@ -143,7 +187,8 @@ export default function ReportsPage() {
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl p-4 text-white">
           <div className="text-orange-100 text-sm">{guestsOnly ? 'Guest Plates' : 'Total Plates'}</div>
-          <div className="text-3xl font-bold">{guestsOnly ? guestTotal : grandTotal}</div>
+          <div className="text-3xl font-bold">{guestsOnly ? guestPlates : totalPlates}</div>
+          <div className="text-orange-200 text-sm">+ {guestsOnly ? guestTea : totalTeaCoffee} Tea/Coffee</div>
         </div>
         <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-xl p-4 text-white">
           <div className="text-green-100 text-sm">Total Amount</div>
@@ -157,21 +202,25 @@ export default function ReportsPage() {
         <div className="space-y-2">
           <div className="flex justify-between items-center">
             <span className="text-orange-600">Guests</span>
-            <span className="font-semibold">{guestTotal} plates</span>
+            <span className="text-sm">{guestPlates} plates + {guestTea} tea</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-pink-600">Special</span>
+            <span className="text-sm">{specialPlates} plates + {specialTea} tea</span>
           </div>
           {!guestsOnly && (
             <>
               <div className="flex justify-between items-center">
                 <span className="text-blue-600">Staff</span>
-                <span className="font-semibold">{staffTotal} plates</span>
+                <span className="text-sm">{staffPlates} plates + {staffTea} tea</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-purple-600">Sevaks</span>
-                <span className="font-semibold">{sevakTotal} plates</span>
+                <span className="text-sm">{sevakPlates} plates + {sevakTea} tea</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-600">Catering Staff</span>
-                <span className="font-semibold">{totalCatering} plates</span>
+                <span className="font-semibold">{totalCatering}</span>
               </div>
             </>
           )}
@@ -204,6 +253,9 @@ export default function ReportsPage() {
                   <th className="px-3 py-3 text-center text-orange-600" colSpan={5}>
                     Guests
                   </th>
+                  <th className="px-3 py-3 text-center text-pink-600" colSpan={5}>
+                    Special
+                  </th>
                   {!guestsOnly && (
                     <>
                       <th className="px-3 py-3 text-center text-blue-600" colSpan={5}>
@@ -222,6 +274,11 @@ export default function ReportsPage() {
                 </tr>
                 <tr className="text-xs text-gray-400">
                   <th></th>
+                  <th className="px-1">N</th>
+                  <th className="px-1">L</th>
+                  <th className="px-1">C</th>
+                  <th className="px-1">T</th>
+                  <th className="px-1">P</th>
                   <th className="px-1">N</th>
                   <th className="px-1">L</th>
                   <th className="px-1">C</th>
@@ -250,18 +307,33 @@ export default function ReportsPage() {
                 {summaries.map((summary) => {
                   const gTotal =
                     summary.guest.navkarshi + summary.guest.lunch + summary.guest.chovihar + summary.guest.tea_coffee + summary.guest.parcel;
+                  const spTotal =
+                    summary.special.navkarshi + summary.special.lunch + summary.special.chovihar + summary.special.tea_coffee + summary.special.parcel;
                   const sTotal =
                     summary.staff.navkarshi + summary.staff.lunch + summary.staff.chovihar + summary.staff.tea_coffee + summary.staff.parcel;
                   const svTotal =
                     summary.sevak.navkarshi + summary.sevak.lunch + summary.sevak.chovihar + summary.sevak.tea_coffee + summary.sevak.parcel;
                   const cateringForDay = summary.catering > 0 ? summary.catering : rates.catering_staff_default;
-                  const rowTotal = gTotal + sTotal + svTotal + cateringForDay;
-                  const rowAmount =
+                  const rowTotal = gTotal + spTotal + sTotal + svTotal + cateringForDay;
+
+                  // Guest amount (global rates)
+                  const guestRowAmount =
                     summary.guest.navkarshi * rates.navkarshi +
                     summary.guest.lunch * rates.lunch +
                     summary.guest.chovihar * rates.chovihar +
                     summary.guest.tea_coffee * rates.tea_coffee +
                     summary.guest.parcel * rates.parcel;
+
+                  // Special amount (daily rates)
+                  const dailyRates = specialRatesMap.get(summary.date) || { navkarshi: 0, lunch: 0, chovihar: 0, tea_coffee: 0, parcel: 0 };
+                  const specialRowAmount =
+                    summary.special.navkarshi * dailyRates.navkarshi +
+                    summary.special.lunch * dailyRates.lunch +
+                    summary.special.chovihar * dailyRates.chovihar +
+                    summary.special.tea_coffee * dailyRates.tea_coffee +
+                    summary.special.parcel * dailyRates.parcel;
+
+                  const rowAmount = guestRowAmount + specialRowAmount;
 
                   return (
                     <tr key={summary.date} className="hover:bg-gray-50">
@@ -282,6 +354,21 @@ export default function ReportsPage() {
                       </td>
                       <td className="px-1 py-2 text-center text-orange-600">
                         {summary.guest.parcel}
+                      </td>
+                      <td className="px-1 py-2 text-center text-pink-600">
+                        {summary.special.navkarshi}
+                      </td>
+                      <td className="px-1 py-2 text-center text-pink-600">
+                        {summary.special.lunch}
+                      </td>
+                      <td className="px-1 py-2 text-center text-pink-600">
+                        {summary.special.chovihar}
+                      </td>
+                      <td className="px-1 py-2 text-center text-pink-600">
+                        {summary.special.tea_coffee}
+                      </td>
+                      <td className="px-1 py-2 text-center text-pink-600">
+                        {summary.special.parcel}
                       </td>
                       {!guestsOnly && (
                         <>
@@ -321,7 +408,7 @@ export default function ReportsPage() {
                         </>
                       )}
                       <td className="px-3 py-2 text-right font-semibold">
-                        {guestsOnly ? gTotal : rowTotal}
+                        {guestsOnly ? gTotal + spTotal : rowTotal}
                       </td>
                       <td className="px-3 py-2 text-right font-semibold text-green-600">
                         ₹{rowAmount}
@@ -338,6 +425,11 @@ export default function ReportsPage() {
                   <td className="px-1 py-2 text-center">{totals.guest.chovihar}</td>
                   <td className="px-1 py-2 text-center">{totals.guest.tea_coffee}</td>
                   <td className="px-1 py-2 text-center">{totals.guest.parcel}</td>
+                  <td className="px-1 py-2 text-center">{totals.special.navkarshi}</td>
+                  <td className="px-1 py-2 text-center">{totals.special.lunch}</td>
+                  <td className="px-1 py-2 text-center">{totals.special.chovihar}</td>
+                  <td className="px-1 py-2 text-center">{totals.special.tea_coffee}</td>
+                  <td className="px-1 py-2 text-center">{totals.special.parcel}</td>
                   {!guestsOnly && (
                     <>
                       <td className="px-1 py-2 text-center">{totals.staff.navkarshi}</td>
@@ -353,7 +445,7 @@ export default function ReportsPage() {
                       <td className="px-1 py-2 text-center">{totalCatering}</td>
                     </>
                   )}
-                  <td className="px-3 py-2 text-right">{guestsOnly ? guestTotal : grandTotal}</td>
+                  <td className="px-3 py-2 text-right">{guestsOnly ? guestTotal + specialTotal : grandTotal}</td>
                   <td className="px-3 py-2 text-right text-green-600">
                     ₹{totalAmount}
                   </td>

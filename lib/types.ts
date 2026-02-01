@@ -1,5 +1,5 @@
 // New individual plate entry (for log-based system)
-export type Category = 'guest' | 'staff' | 'sevak' | 'catering';
+export type Category = 'guest' | 'staff' | 'sevak' | 'catering' | 'special';
 export type MealType = 'navkarshi' | 'lunch' | 'chovihar' | 'tea_coffee' | 'parcel';
 
 export interface PlateEntry {
@@ -42,7 +42,31 @@ export interface DailySummary {
   guest: MealCounts;
   staff: MealCounts;
   sevak: MealCounts;
+  special: MealCounts;  // Special category with daily rates
   catering: number;  // Single count for catering staff (no meal breakdown)
+}
+
+// Special daily rates (rates can change per day)
+export interface SpecialDailyRates {
+  date: string;
+  navkarshi: number;
+  lunch: number;
+  chovihar: number;
+  tea_coffee: number;
+  parcel: number;
+}
+
+export const DEFAULT_SPECIAL_RATES: Omit<SpecialDailyRates, 'date'> = {
+  navkarshi: 0,
+  lunch: 0,
+  chovihar: 0,
+  tea_coffee: 0,
+  parcel: 0,
+};
+
+// Utility: Get plate count (excludes tea_coffee)
+export function getPlateCount(meals: MealCounts): number {
+  return meals.navkarshi + meals.lunch + meals.chovihar + meals.parcel;
 }
 
 export interface Rates {

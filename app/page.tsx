@@ -1,13 +1,15 @@
 'use client';
 
 import { useState, useEffect, Suspense } from 'react';
-import { PlateEntry, Rates, DEFAULT_RATES, Category, MealType } from '@/lib/types';
+import { PlateEntry, Rates, DEFAULT_RATES, Category, MealType, SpecialDailyRates, DEFAULT_SPECIAL_RATES, getPlateCount } from '@/lib/types';
 import {
   addPlateEntry,
   getPlateEntriesByDate,
   updatePlateEntry,
   deletePlateEntry,
   getRates,
+  getSpecialRatesForDate,
+  saveSpecialRatesForDate,
 } from '@/lib/supabase';
 
 function HomePageContent() {
@@ -38,6 +40,9 @@ function HomePageContent() {
   // Summary edit state
   const [summaryEdits, setSummaryEdits] = useState<Record<string, string>>({});
 
+  // Special rates state
+  const [specialRates, setSpecialRates] = useState<Omit<SpecialDailyRates, 'date'>>(DEFAULT_SPECIAL_RATES);
+
   // Load data
   useEffect(() => {
     getRates().then(setRates);
@@ -45,6 +50,14 @@ function HomePageContent() {
 
   useEffect(() => {
     loadEntries();
+    // Load special rates for the selected date
+    getSpecialRatesForDate(date).then((rates) => {
+      if (rates) {
+        setSpecialRates(rates);
+      } else {
+        setSpecialRates(DEFAULT_SPECIAL_RATES);
+      }
+    });
   }, [date]);
 
   const loadEntries = async () => {
@@ -60,6 +73,7 @@ function HomePageContent() {
     guest: emptyMealCounts(),
     staff: emptyMealCounts(),
     sevak: emptyMealCounts(),
+    special: emptyMealCounts(),
     catering: 0,
   };
 
@@ -75,17 +89,46 @@ function HomePageContent() {
   const hasCateringEntry = entries.some(e => e.category === 'catering');
   const cateringCount = hasCateringEntry ? summary.catering : rates.catering_staff_default;
 
-  const guestTotal = summary.guest.navkarshi + summary.guest.lunch + summary.guest.chovihar + summary.guest.tea_coffee + summary.guest.parcel;
-  const staffTotal = summary.staff.navkarshi + summary.staff.lunch + summary.staff.chovihar + summary.staff.tea_coffee + summary.staff.parcel;
-  const sevakTotal = summary.sevak.navkarshi + summary.sevak.lunch + summary.sevak.chovihar + summary.sevak.tea_coffee + summary.sevak.parcel;
-  const grandTotal = guestTotal + staffTotal + sevakTotal + cateringCount;
+  // Plate counts (excluding tea_coffee)
+  const guestPlates = getPlateCount(summary.guest);
+  const staffPlates = getPlateCount(summary.staff);
+  const sevakPlates = getPlateCount(summary.sevak);
+  const specialPlates = getPlateCount(summary.special);
 
-  const totalAmount =
+  // Tea/coffee counts
+  const guestTea = summary.guest.tea_coffee;
+  const staffTea = summary.staff.tea_coffee;
+  const sevakTea = summary.sevak.tea_coffee;
+  const specialTea = summary.special.tea_coffee;
+
+  // Total counts (plates + tea)
+  const guestTotal = guestPlates + guestTea;
+  const staffTotal = staffPlates + staffTea;
+  const sevakTotal = sevakPlates + sevakTea;
+  const specialTotal = specialPlates + specialTea;
+
+  // Grand totals
+  const totalPlates = guestPlates + staffPlates + sevakPlates + specialPlates + cateringCount;
+  const totalTea = guestTea + staffTea + sevakTea + specialTea;
+  const grandTotal = totalPlates + totalTea;
+
+  // Guest amount (using global rates)
+  const guestAmount =
     summary.guest.navkarshi * rates.navkarshi +
     summary.guest.lunch * rates.lunch +
     summary.guest.chovihar * rates.chovihar +
     summary.guest.tea_coffee * rates.tea_coffee +
     summary.guest.parcel * rates.parcel;
+
+  // Special amount (using daily rates)
+  const specialAmount =
+    summary.special.navkarshi * specialRates.navkarshi +
+    summary.special.lunch * specialRates.lunch +
+    summary.special.chovihar * specialRates.chovihar +
+    summary.special.tea_coffee * specialRates.tea_coffee +
+    summary.special.parcel * specialRates.parcel;
+
+  const totalAmount = guestAmount + specialAmount;
 
   // Handlers
   const handleAdd = async () => {
@@ -154,6 +197,7 @@ function HomePageContent() {
       staff: 'Staff',
       sevak: 'Sevak',
       catering: 'Catering',
+      special: 'Special',
     };
     return labels[cat];
   };
@@ -182,6 +226,7 @@ function HomePageContent() {
       staff: 'text-blue-600 bg-blue-50',
       sevak: 'text-purple-600 bg-purple-50',
       catering: 'text-gray-600 bg-gray-100',
+      special: 'text-pink-600 bg-pink-50',
     };
     return colors[cat];
   };
@@ -220,8 +265,13 @@ function HomePageContent() {
     setSaving(false);
   };
 
+  // Handle special rates save
+  const handleSaveSpecialRates = async () => {
+    await saveSpecialRatesForDate(date, specialRates);
+  };
+
   // Handle summary cell edit
-  const handleSummaryEdit = async (cat: 'guest' | 'staff' | 'sevak', meal: MealType, newValue: number) => {
+  const handleSummaryEdit = async (cat: 'guest' | 'staff' | 'sevak' | 'special', meal: MealType, newValue: number) => {
     if (newValue < 0) return;
 
     const currentValue = summary[cat][meal];
@@ -306,8 +356,8 @@ function HomePageContent() {
         {/* Category Selection */}
         <div className="mb-3">
           <label className="text-xs text-gray-500 mb-1 block">Category</label>
-          <div className="grid grid-cols-3 gap-2">
-            {(['guest', 'staff', 'sevak'] as Category[]).map((cat) => (
+          <div className="grid grid-cols-4 gap-2">
+            {(['guest', 'staff', 'sevak', 'special'] as Category[]).map((cat) => (
               <button
                 key={cat}
                 onClick={() => setCategory(cat)}
@@ -317,7 +367,9 @@ function HomePageContent() {
                       ? 'bg-orange-500 text-white'
                       : cat === 'staff'
                       ? 'bg-blue-500 text-white'
-                      : 'bg-purple-500 text-white'
+                      : cat === 'sevak'
+                      ? 'bg-purple-500 text-white'
+                      : 'bg-pink-500 text-white'
                     : 'bg-gray-100 text-gray-600'
                 }`}
               >
@@ -326,6 +378,80 @@ function HomePageContent() {
             ))}
           </div>
         </div>
+
+        {/* Special Rates Input (shown when Special category selected) */}
+        {category === 'special' && (
+          <div className="mb-3 p-3 bg-pink-50 rounded-lg border border-pink-200">
+            <label className="text-xs text-pink-600 font-medium mb-2 block">
+              Special Rates for {formatDate(date)}
+            </label>
+            <div className="grid grid-cols-5 gap-2">
+              <div>
+                <label className="text-xs text-gray-500 block text-center">N</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={specialRates.navkarshi || ''}
+                  onChange={(e) => setSpecialRates({ ...specialRates, navkarshi: parseInt(e.target.value) || 0 })}
+                  onBlur={handleSaveSpecialRates}
+                  className="w-full px-2 py-1 border rounded text-center text-sm"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block text-center">L</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={specialRates.lunch || ''}
+                  onChange={(e) => setSpecialRates({ ...specialRates, lunch: parseInt(e.target.value) || 0 })}
+                  onBlur={handleSaveSpecialRates}
+                  className="w-full px-2 py-1 border rounded text-center text-sm"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block text-center">C</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={specialRates.chovihar || ''}
+                  onChange={(e) => setSpecialRates({ ...specialRates, chovihar: parseInt(e.target.value) || 0 })}
+                  onBlur={handleSaveSpecialRates}
+                  className="w-full px-2 py-1 border rounded text-center text-sm"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block text-center">T</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={specialRates.tea_coffee || ''}
+                  onChange={(e) => setSpecialRates({ ...specialRates, tea_coffee: parseInt(e.target.value) || 0 })}
+                  onBlur={handleSaveSpecialRates}
+                  className="w-full px-2 py-1 border rounded text-center text-sm"
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block text-center">P</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={specialRates.parcel || ''}
+                  onChange={(e) => setSpecialRates({ ...specialRates, parcel: parseInt(e.target.value) || 0 })}
+                  onBlur={handleSaveSpecialRates}
+                  className="w-full px-2 py-1 border rounded text-center text-sm"
+                  placeholder="0"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-pink-500 mt-2">
+              These rates apply to all Special entries for this date
+            </p>
+          </div>
+        )}
 
         {/* Meal Selection */}
         <div className="mb-3">
@@ -505,6 +631,27 @@ function HomePageContent() {
               ))}
               <div className="text-center font-semibold text-sm">{sevakTotal}</div>
             </div>
+            {/* Special Row */}
+            <div className="grid grid-cols-7 gap-1 mb-2 items-center">
+              <div className="text-pink-600 font-medium text-sm">Special</div>
+              {(['navkarshi', 'lunch', 'chovihar', 'tea_coffee', 'parcel'] as MealType[]).map((meal) => (
+                <input
+                  key={`special-${meal}`}
+                  type="number"
+                  min="0"
+                  value={summaryEdits[`special-${meal}`] ?? summary.special[meal]}
+                  onChange={(e) => setSummaryEdits({ ...summaryEdits, [`special-${meal}`]: e.target.value })}
+                  onBlur={(e) => {
+                    const val = parseInt(e.target.value) || 0;
+                    if (val !== summary.special[meal]) {
+                      handleSummaryEdit('special', meal, val);
+                    }
+                  }}
+                  className="w-full px-1 py-1 border rounded text-center text-sm"
+                />
+              ))}
+              <div className="text-center font-semibold text-sm">{specialTotal}</div>
+            </div>
             {/* Catering Row */}
             <div className="grid grid-cols-7 gap-1 mb-2 items-center border-t pt-2">
               <div className="text-gray-600 font-medium text-sm">Catering</div>
@@ -567,14 +714,20 @@ function HomePageContent() {
                 {editingId === entry.id ? (
                   // Edit mode
                   <div className="space-y-2">
-                    <div className="grid grid-cols-3 gap-2">
-                      {(['guest', 'staff', 'sevak'] as Category[]).map((cat) => (
+                    <div className="grid grid-cols-4 gap-2">
+                      {(['guest', 'staff', 'sevak', 'special'] as Category[]).map((cat) => (
                         <button
                           key={cat}
                           onClick={() => setEditCategory(cat)}
                           className={`py-1 px-2 rounded text-xs font-medium ${
                             editCategory === cat
-                              ? 'bg-orange-500 text-white'
+                              ? cat === 'guest'
+                                ? 'bg-orange-500 text-white'
+                                : cat === 'staff'
+                                ? 'bg-blue-500 text-white'
+                                : cat === 'sevak'
+                                ? 'bg-purple-500 text-white'
+                                : 'bg-pink-500 text-white'
                               : 'bg-gray-100 text-gray-600'
                           }`}
                         >
@@ -687,22 +840,29 @@ function HomePageContent() {
           <div className="flex justify-between items-center">
             <span className="text-orange-600 font-medium">Guests</span>
             <span className="text-xs">
-              N:{summary.guest.navkarshi} L:{summary.guest.lunch} C:{summary.guest.chovihar} T:{summary.guest.tea_coffee} P:{summary.guest.parcel}
+              Plates:{guestPlates} Tea:{guestTea}
               <strong className="ml-1">= {guestTotal}</strong>
             </span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-blue-600 font-medium">Staff</span>
             <span className="text-xs">
-              N:{summary.staff.navkarshi} L:{summary.staff.lunch} C:{summary.staff.chovihar} T:{summary.staff.tea_coffee} P:{summary.staff.parcel}
+              Plates:{staffPlates} Tea:{staffTea}
               <strong className="ml-1">= {staffTotal}</strong>
             </span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-purple-600 font-medium">Sevaks</span>
             <span className="text-xs">
-              N:{summary.sevak.navkarshi} L:{summary.sevak.lunch} C:{summary.sevak.chovihar} T:{summary.sevak.tea_coffee} P:{summary.sevak.parcel}
+              Plates:{sevakPlates} Tea:{sevakTea}
               <strong className="ml-1">= {sevakTotal}</strong>
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-pink-600 font-medium">Special</span>
+            <span className="text-xs">
+              Plates:{specialPlates} Tea:{specialTea}
+              <strong className="ml-1">= {specialTotal}</strong>
             </span>
           </div>
           <div className="flex justify-between items-center pt-2 border-t">
@@ -714,12 +874,16 @@ function HomePageContent() {
 
       {/* Grand Total */}
       <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl p-4 text-white">
-        <div className="flex justify-between items-center mb-2">
+        <div className="flex justify-between items-center mb-1">
           <span className="text-orange-100">Total Plates</span>
-          <span className="text-2xl font-bold">{grandTotal}</span>
+          <span className="text-2xl font-bold">{totalPlates}</span>
         </div>
-        <div className="flex justify-between items-center">
-          <span className="text-orange-100">Amount (Guests only)</span>
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-orange-200 text-sm">+ Tea/Coffee</span>
+          <span className="text-lg font-semibold">{totalTea}</span>
+        </div>
+        <div className="flex justify-between items-center pt-2 border-t border-orange-400">
+          <span className="text-orange-100">Amount (Guest + Special)</span>
           <span className="text-2xl font-bold">₹{totalAmount.toLocaleString()}</span>
         </div>
       </div>
