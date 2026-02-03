@@ -269,7 +269,8 @@ export default function ReportsPage() {
                       </th>
                     </>
                   )}
-                  <th className="px-3 py-3 text-right text-gray-600">Total</th>
+                  <th className="px-3 py-3 text-right text-gray-600">Plates</th>
+                  <th className="px-3 py-3 text-right text-teal-600">Tea</th>
                   <th className="px-3 py-3 text-right text-green-600">Amt</th>
                 </tr>
                 <tr className="text-xs text-gray-400">
@@ -301,20 +302,29 @@ export default function ReportsPage() {
                   )}
                   <th></th>
                   <th></th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {summaries.map((summary) => {
-                  const gTotal =
-                    summary.guest.navkarshi + summary.guest.lunch + summary.guest.chovihar + summary.guest.tea_coffee + summary.guest.parcel;
-                  const spTotal =
-                    summary.special.navkarshi + summary.special.lunch + summary.special.chovihar + summary.special.tea_coffee + summary.special.parcel;
-                  const sTotal =
-                    summary.staff.navkarshi + summary.staff.lunch + summary.staff.chovihar + summary.staff.tea_coffee + summary.staff.parcel;
-                  const svTotal =
-                    summary.sevak.navkarshi + summary.sevak.lunch + summary.sevak.chovihar + summary.sevak.tea_coffee + summary.sevak.parcel;
+                  // Plate counts (excluding tea_coffee)
+                  const gPlates = getPlateCount(summary.guest);
+                  const spPlates = getPlateCount(summary.special);
+                  const sPlates = getPlateCount(summary.staff);
+                  const svPlates = getPlateCount(summary.sevak);
                   const cateringForDay = summary.catering > 0 ? summary.catering : rates.catering_staff_default;
-                  const rowTotal = gTotal + spTotal + sTotal + svTotal + cateringForDay;
+
+                  // Tea counts
+                  const gTea = summary.guest.tea_coffee;
+                  const spTea = summary.special.tea_coffee;
+                  const sTea = summary.staff.tea_coffee;
+                  const svTea = summary.sevak.tea_coffee;
+
+                  // Row totals
+                  const rowPlates = gPlates + spPlates + sPlates + svPlates + cateringForDay;
+                  const rowTea = gTea + spTea + sTea + svTea;
+                  const guestsOnlyPlates = gPlates + spPlates;
+                  const guestsOnlyTea = gTea + spTea;
 
                   // Guest amount (global rates)
                   const guestRowAmount =
@@ -408,7 +418,10 @@ export default function ReportsPage() {
                         </>
                       )}
                       <td className="px-3 py-2 text-right font-semibold">
-                        {guestsOnly ? gTotal + spTotal : rowTotal}
+                        {guestsOnly ? guestsOnlyPlates : rowPlates}
+                      </td>
+                      <td className="px-3 py-2 text-right font-semibold text-teal-600">
+                        {guestsOnly ? guestsOnlyTea : rowTea}
                       </td>
                       <td className="px-3 py-2 text-right font-semibold text-green-600">
                         ₹{rowAmount}
@@ -445,7 +458,8 @@ export default function ReportsPage() {
                       <td className="px-1 py-2 text-center">{totalCatering}</td>
                     </>
                   )}
-                  <td className="px-3 py-2 text-right">{guestsOnly ? guestTotal + specialTotal : grandTotal}</td>
+                  <td className="px-3 py-2 text-right">{guestsOnly ? guestPlates + specialPlates : totalPlates}</td>
+                  <td className="px-3 py-2 text-right text-teal-600">{guestsOnly ? guestTea + specialTea : totalTeaCoffee}</td>
                   <td className="px-3 py-2 text-right text-green-600">
                     ₹{totalAmount}
                   </td>
